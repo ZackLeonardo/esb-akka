@@ -3,6 +3,7 @@ package com.sino.frontend;
 import akka.NotUsed;
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
+import akka.actor.Props;
 import akka.http.javadsl.ConnectHttp;
 import akka.http.javadsl.Http;
 import akka.http.javadsl.ServerBinding;
@@ -13,6 +14,8 @@ import akka.http.javadsl.model.StatusCodes;
 import akka.http.javadsl.server.AllDirectives;
 import akka.http.javadsl.server.Route;
 import akka.http.javadsl.unmarshalling.StringUnmarshallers;
+import akka.routing.RoundRobinPool;
+import akka.routing.SmallestMailboxPool;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Flow;
 import akka.util.Timeout;
@@ -28,8 +31,10 @@ import java.util.concurrent.TimeUnit;
 import com.sino.frontend.SubscriptionCertificationActor;
 
 public class HttpServerRouter extends AllDirectives {
-	
-	private final ActorRef subscriptionCertificationActor;
+//	//不使用池
+//	private final ActorRef subscriptionCertificationActor;
+	//使用池
+	private final ActorRef routerActorRef;
 	
 	
 	public static void main(String[] args) throws Exception {
@@ -53,7 +58,21 @@ public class HttpServerRouter extends AllDirectives {
 	}
 	
 	private HttpServerRouter(final ActorSystem system) {
-		subscriptionCertificationActor = system.actorOf(SubscriptionCertificationActor.props(), "subscriptionCertificationActor");
+//		//不使用池
+//		subscriptionCertificationActor = system.actorOf(SubscriptionCertificationActor.props(), "subscriptionCertificationActor");
+		
+		//使用池，第一次需要创建所以会响应慢
+		routerActorRef = system.actorOf(
+				SubscriptionCertificationActor.props().withRouter(new RoundRobinPool(5)),
+			    "subscriptionCertificationRouterActor"
+			);
+		
+//		//也可以这么写
+//		routerActorRef = system.actorOf(new SmallestMailboxPool(5).props(SubscriptionCertificationActor.props()), 
+//			"subscriptionCertificationRouterActor"
+//		);
+		
+		//使用group的话需要提前建好
 		
 	}
 	
@@ -69,7 +88,10 @@ public class HttpServerRouter extends AllDirectives {
 										final Timeout timeout = Timeout.durationToTimeout(FiniteDuration.apply(10, TimeUnit.SECONDS));
 										if (!type.isPresent()) {
 											try {
-												CompletionStage<ESBResult> response = ask(subscriptionCertificationActor, new Params(token, service, args), timeout).thenApply(ESBResult.class::cast);
+//												//不适用池
+//								  				CompletionStage<ESBResult> response = ask(subscriptionCertificationActor, new Params(token, service, args), timeout).thenApply(ESBResult.class::cast);
+								  				//使用池
+												CompletionStage<ESBResult> response = ask(routerActorRef, new Params(token, service, args), timeout).thenApply(ESBResult.class::cast);
 												
 												return completeOKWithFuture(response, Jackson.<ESBResult>marshaller());
 											} catch (Exception e) {
