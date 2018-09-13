@@ -28,13 +28,12 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
-import com.sino.frontend.SubscriptionCertificationActor;
-
 public class HttpServerRouter extends AllDirectives {
 //	//不使用池
 //	private final ActorRef subscriptionCertificationActor;
 	//使用池
 	private final ActorRef routerActorRef;
+	private final ActorRef argsCertificationActorRef;
 	
 	
 	public static void main(String[] args) throws Exception {
@@ -58,14 +57,19 @@ public class HttpServerRouter extends AllDirectives {
 	}
 	
 	private HttpServerRouter(final ActorSystem system) {
+		argsCertificationActorRef = system.actorOf(
+			ArgsCertificationActor.props().withRouter(new RoundRobinPool(5)),
+		    "argsCertificationActorRef"
+		);
+		
 //		//不使用池
 //		subscriptionCertificationActor = system.actorOf(SubscriptionCertificationActor.props(), "subscriptionCertificationActor");
 		
 		//使用池，第一次需要创建所以会响应慢
 		routerActorRef = system.actorOf(
-				SubscriptionCertificationActor.props().withRouter(new RoundRobinPool(5)),
-			    "subscriptionCertificationRouterActor"
-			);
+			SubscriptionCertificationActor.props(argsCertificationActorRef).withRouter(new RoundRobinPool(5)),
+		    "subscriptionCertificationRouterActor"
+		);
 		
 //		//也可以这么写
 //		routerActorRef = system.actorOf(new SmallestMailboxPool(5).props(SubscriptionCertificationActor.props()), 
